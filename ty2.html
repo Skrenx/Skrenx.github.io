@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Laguna Fire Station Locator</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.24/esri/themes/dark/main.css">
+  <style>
+    html,body,#viewDiv{height:100%;margin:0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;background:#121212}
+    .app{display:grid;grid-template-columns:360px 1fr;height:100vh}
+    .sidebar{padding:16px;background:#1e1e1e;color:#fff;overflow:auto;box-shadow:2px 0 10px rgba(0,0,0,0.3)}
+    .sidebar h3{color:#ff5252;margin-top:0;font-size:1.4rem}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    .controls button,input,select{padding:10px;border-radius:8px;border:1px solid #333;background:#2c2c2c;color:#fff;font-size:0.9rem;cursor:pointer}
+    .controls button:hover,.controls select:hover{background:#444}
+    .list{margin-top:12px}
+    .card{background:#2a2a2a;padding:12px;border-radius:10px;margin-bottom:12px;box-shadow:0 2px 6px rgba(0,0,0,0.3)}
+    .card h4{margin:0 0 6px 0;color:#ff5252;font-size:1rem}
+    .card small{color:#bbb}
+    .card p{margin:6px 0;color:#ddd;font-size:0.85rem}
+    .btn-center,.btn-dir{padding:6px 10px;border-radius:6px;border:none;cursor:pointer;font-size:0.85rem}
+    .btn-center{background:#ff5252;color:#fff}
+    .btn-dir{background:#2979ff;color:#fff}
+    .btn-center:hover{background:#e64545}
+    .btn-dir:hover{background:#1f5fd1}
+    #viewDiv{height:100%;border:none !important;background:transparent !important}
+    .esri-view-surface{background:#f0f0f0 !important}
+    hr{border:none;height:1px;background:#333;margin:16px 0}
+    small{color:#aaa}
+    .esri-popup__main-container{background:#1e1e1e !important;color:#fff !important;border-radius:10px !important;box-shadow:0 2px 10px rgba(0,0,0,0.4)}
+    .esri-popup__header-title{color:#ff5252 !important;font-weight:bold}
+    .legend img{vertical-align:middle;margin-right:6px}
+    @media (max-width: 768px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+      .sidebar {
+        grid-row: 1;
+        grid-column: 1;
+        height: auto;
+        max-height: 50vh;
+        overflow-y: auto;
+      }
+      #viewDiv {
+        grid-row: 2;
+        grid-column: 1;
+        height: 50vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h3>🚒 Laguna Fire Stations & Hydrants Locator</h3>
+
+      <div class="legend" style="margin:8px 0 12px;font-size:1.3rem;color:#ccc">
+        <strong>Legend</strong><br>
+        <img src="https://maps.google.com/mapfiles/ms/icons/red-dot.png" width="20"> Fire Station <br>
+        <img src="https://maps.google.com/mapfiles/ms/icons/blue-dot.png" width="20"> Hydrant <br>
+        <span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:green;border:1px solid #fff;margin-right:6px"></span> Your Location
+      </div>
+
+      <div class="controls">
+        <button id="locateBtn">📍 Use My Location</button>
+        <button id="nearestBtn">⭐ Find Nearest</button>
+
+        <div style="width:80%;margin:0;padding:0;">
+  <label for="radius" style="display:block;color:#ddd;font-size:0.85rem;margin:0 0 4px 0;">Radius (km)</label>
+  <input id="radius" type="range" min="1" max="50" value="10"
+    style="width:100%;margin:0;padding:0;accent-color:#2979ff;height:6px;border-radius:5px;background:#222;cursor:pointer;">
+</div>
+
+
+        <select id="filterType" title="Filter type">
+          <option value="all">All</option>
+          <option value="station">Fire Stations</option>
+          <option value="hydrant">Hydrants</option>
+        </select>
+      </div>
+
+      <div>
+        <input id="search" placeholder="🔍 Search by name or address" 
+          style="width:100%;padding:10px;border-radius:8px;border:1px solid #333;background:#2c2c2c;color:#fff" />
+      </div>
+
+      <div class="list" id="list"></div>
+
+      <hr />
+      <small>⭐ Wish: Sana madefend at sana makasabay sa Graduation Cutie :></small>
+    </aside>
+
+    <div id="viewDiv"></div>
+  </div>
+
+  <script src="https://js.arcgis.com/4.24/"></script>
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/Graphic",
+      "esri/geometry/Point",
+      "esri/widgets/Locate",
+      "esri/widgets/Zoom",
+      "esri/widgets/Home"
+    ], function(Map, MapView, Graphic, Point, Locate, Zoom, Home) {
+
+      const features = [
+        { id: 1, type: 'station', name: 'Cabuyao Fire Station', contact: '(049) 544 5628', hours: '24/7', address: '74CF+GVJ, Barangay Sala, Cabuyao, Laguna, Cabuyao City', coords: [121.1245817427208, 14.271384727731627], mapsUrl: "https://www.google.com/maps/place/Cabuyao+Fire+Station/@14.2711884,121.124688,19.5z/data=!4m6!3m5!1s0x3397d86263f462db:0x9ae1e1ed7912ff7e!8m2!3d14.2713354!4d121.1246303!16s%2Fg%2F1hc5pmbqk" },
+        { id: 2, type: 'station', name: 'Santa Rosa City Fire Station', contact: '(049) 534 1291', hours: '24/7', address: '8486+863, Rizal Ave, City of Santa Rosa, 4026 Laguna', coords: [121.11057201775614, 14.31585359503307], mapsUrl: "https://www.google.com/maps/place/Santa+Rosa+City+Fire+Station/@14.3157556,121.1079797,17z/data=!3m1!4b1!4m6!3m5!1s0x3397d9bf4cc4f949:0x3bbe16ea6cc80fae!8m2!3d14.3157504!4d121.1105546!16s%2Fg%2F1hc0zw3t2?entry=ttu" },
+        { id: 3, type: 'station', name: 'Bureau of Fire Protection Regional Office 4a CALABARZON', contact: '(049) 545 1695', hours: '24/7', address: '4A Camp Vicente Lim Rd, Calamba, 4027 Laguna', coords: [121.11799079476646, 14.215618801662085], mapsUrl: "https://www.google.com/maps/place/Bureau+of+Fire+Protection+Regional+Office+4a+CALABARZON/@14.2148434,121.1196038,18z/data=!4m6!3m5!1s0x33bd6303b7f49175:0xd4d65be3dde426c8!8m2!3d14.2156084!4d121.1179622!16s%2Fg%2F1thxsrqm" },
+        { id: 4, type: 'station', name: 'Calamba City Fire Station', contact: '(049) 545 1695', hours: '24/7', address: '55V5+9P6, Bacnotan Rd, Calamba, 4027 Laguna', coords: [121.1592981904114, 14.193493079197673], mapsUrl: "https://www.google.com/maps/place/Calamba+City+Fire+Station/@14.193413,121.1566928,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd63c2b4180fa7:0xa0c9b0e74c875ad8!8m2!3d14.1934078!4d121.1592677!16s%2Fg%2F11b6xyzbj4?entry=ttu" },
+        { id: 5, type: 'station', name: 'Batong Malake Fire Station', contact: '(049) 536 4349', hours: '24/7', address: '56CR+HQJ, Opal St, Los Baños, Laguna', coords: [121.24196906614863, 14.171576573560756], mapsUrl: "https://www.google.com/maps/place/Batong+Malake+Fire+Station/@14.1714732,121.2393224,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd60b837b3739b:0x5b4042f8eaddefde!8m2!3d14.171468!4d121.2418973!16s%2Fg%2F1hc8dlk75?entry=ttu" },
+        { id: 6, type: 'station', name: 'Bureau of Fire Protection San Pablo', contact: '(046) 801 8955', hours: '24/7', address: '38CG+5C2, Inocencio Barleta St, San Pablo City, Laguna', coords: [121.32609129672522, 14.070358099856383], mapsUrl: "https://www.google.com/maps/place/Bureau+of+Fire+Protection/@14.0551326,121.3147542,15z/data=!4m10!1m2!2m1!1sBureau+of+Fire+Protection+San+Pablo!3m6!1s0x33bd5cc941b7925f:0xbe6b17732928408f!8m2!3d14.0703784!4d121.3260255!15sCiNCdXJlYXUgb2YgRmlyZSBQcm90ZWN0aW9uIFNhbiBQYWJsb5IBDGZpcmVfc3RhdGlvbqoBaxABKh0iGWJ1cmVhdSBvZiBmaXJlIHByb3RlY3Rpb24oADIfEAEiG5Ed7JLQ-X7I5D7MP7VVz60Iaj0ezO48UZWTVDInEAIiI2J1cmVhdSBvZiBmaXJlIHByb3RlY3Rpb24gc2FuIHBhYmxv4AEA!16s%2Fg%2F1hc79bmhj?entry=ttu" },
+        { id: 7, type: 'station', name: 'Bay Fire Station - BFP Bay, Laguna', contact: '09662869744', hours: '24/7', address: '57JM+3RX, J. Tanalega St, Bay, Laguna', coords: [121.28461064158401, 14.180277624169516], mapsUrl: "https://www.google.com/maps/place/Bay+Fire+Station+-+BFP+Bay,+Laguna/@14.1802387,121.2820196,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd5f2a1a2d2913:0x991f8bf7d76b54c6!8m2!3d14.1802335!4d121.2845945!16s%2Fg%2F11nx1sw2jh?entry=ttu" },
+        { id: 8, type: 'station', name: 'BFP Victoria Fire Station', contact: '(049)523 3368', hours: '24/7', address: '68HH+3CH, E Quirino St, Victoria, Laguna', coords: [121.32858058036233, 14.227770881030736], mapsUrl: "https://www.google.com/maps/place/BFP+Victoria+Fire+Station/@14.2276994,121.3260232,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd5f604d555a35:0x748fbc53d64097d7!8m2!3d14.2276942!4d121.3285981!16s%2Fg%2F11byck69g9?entry=ttu" },
+        { id: 9, type: 'station', name: 'Pila Fire Station', contact: '5590511', hours: '24/7', address: 'Ruiz St., Brgy Bulilan Norte Brgy, Pila, 4010 Laguna', coords: [121.3669691275018, 14.233777271804547], mapsUrl: "https://www.google.com/maps/place/Pila+Fire+Station/@14.233754,121.3643947,17z/data=!3m1!4b1!4m6!3m5!1s0x3397e3c70dd36aef:0xe2333b6de4266262!8m2!3d14.2337488!4d121.3669696!16s%2Fg%2F11t5zqlmx5?entry=ttu" },
+        { id:10, type:'station', name:'Pagsanjan Fire Station', contact:'09321467933', hours:'24/7', address:'7FM4+3X9, Pagsanjan, Laguna', coords:[121.45747211667471,14.28276434645187], mapsUrl:'https://www.google.com/maps/place/Pagsanjan+Fire+Station/@14.2784223,121.4580462,16z/data=!4m6!3m5!1s0x3397fd0a16103463:0x3b820d792129f062!8m2!3d14.2826748!4d121.4574761!16s%2Fg%2F11j37xprph?entry=ttu' },
+{ id:11, type:'station', name:'Lumban Fire Station', contact:'(049) 557 0771', hours:'24/7', address:'7FX7+M36, National Hwy, Lumban, 4014 Laguna', coords:[121.46263883305267,14.299204219918012], mapsUrl:'https://www.google.com/maps/place/Lumban+Fire+Station/@14.2991573,121.4600542,17z/data=!3m1!4b1!4m6!3m5!1s0x3397fb0b00000001:0x52160364299ca78e!8m2!3d14.2991521!4d121.4626291!16s%2Fg%2F1pzwtdfyx?entry=ttu' },
+{ id:12, type:'station', name:'Magdalena Fire Station', contact:'(049) 503 3446', hours:'24/7', address:'6C2H+4MP, Zamora, Magdalena, Laguna', coords:[121.42920138780032,14.200391792207448], mapsUrl:'https://www.google.com/maps/place/Magdalena+Fire+Station/@14.2003346,121.4266417,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd580eecf27edb:0x756b7a55465c061e!8m2!3d14.2003294!4d121.4292166!16s%2Fg%2F1hc8l76hk?entry=ttu' },
+{ id:13, type:'station', name:'Liliw Fire Station', contact:'(046) 563 2868', hours:'24/7', address:'4CMM+GFH, Liliw, Laguna', coords:[121.43371319330328,14.133834987478497], mapsUrl:'https://www.google.com/maps/place/Liliw+Fire+Station/@14.1338084,121.4311477,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd59f7ecece3fb:0x2a86178f1b49ecc7!8m2!3d14.1338032!4d121.4337226!16s%2Fg%2F1hc1df_v7?entry=ttu' },
+{ id:14, type:'station', name:'Majayjay Fire Station', contact:'09663496148', hours:'24/7', address:'P Zamora St. Brgy, Majayjay, Laguna', coords:[121.4720818424173,14.140968745676155], mapsUrl:'https://www.google.com/maps/place/Majayjay+Fire+Station/@14.1409017,121.4694471,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd573e2d35a31b:0x40d2852617c851e6!8m2!3d14.1408965!4d121.472022!16s%2Fg%2F1hc1hhc2l?entry=ttu' },
+{ id:15, type:'station', name:'Luisiana Municipal Fire Station', contact:'(046) 555 3300', hours:'24/7', address:'5GM6+F7Q, Ibanez St, Luisiana, 4032 Laguna', coords:[121.51073562494729,14.18373599291222], mapsUrl:'https://www.google.com/maps/place/Luisiana+Municipal+Fire+Station/@14.1837103,121.5081678,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd563f420a66ef:0x1f1e1b61823867b8!8m2!3d14.1837051!4d121.5107427!16s%2Fg%2F1hc8wq7xv?entry=ttu' },
+{ id:16, type:'station', name:'Cavinti Fire Station', contact:'09162346589', hours:'24/7', address:'7F3W+5JV, National Road, Cavinti, Laguna', coords:[121.49655599969712,14.253048721495212], mapsUrl:'https://www.google.com/maps/place/Cavinti+Fire+Station/@14.2529927,121.4939705,17z/data=!3m1!4b1!4m6!3m5!1s0x3397fdd9f7461a09:0x6c1e4f4b1df5e45e!8m2!3d14.2529875!4d121.4965454!16s%2Fg%2F11fmpbzq2r?entry=ttu' },
+{ id:17, type:'station', name:'Nagcarlan Fire Station', contact:'(049) 530 7357', hours:'24/7', address:'4CM8+534, Nagcarlan Municipal Compound, Rizal Avenue, Brgy, Nagcarlan, Laguna', coords:[121.41516259168674,14.132931609380623], mapsUrl:'https://www.google.com/maps/place/Nagcarlan+Fire+Station/@14.1333677,121.4133266,17z/data=!4m6!3m5!1s0x33bd5a4cb65a3e79:0xdf584431e9ec6b6a!8m2!3d14.1328942!4d121.4151905!16s%2Fg%2F1hc17dkth?entry=ttu' },
+{ id:18, type:'station', name:'Alaminos Fire Station', contact:'(049) 521 0153', hours:'24/7', address:'368W+6M5, D Fandino, Barangay 2, Alaminos, Laguna', coords:[121.24685832694098,14.065362760678617], mapsUrl:'https://www.google.com/maps/place/Alaminos+Fire+Station/@14.0655125,121.244175,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd681194da3f3d:0xf55fb648cd894375!8m2!3d14.0655073!4d121.2467499!16s%2Fg%2F1hcb001mx?entry=ttu' },
+{ id:19, type:'station', name:'City Fire Auxillary Unit - San Pedro City', contact:'(028) 868 6464', hours:'24/7', address:'Corner Pacita Ave, San Pedro, Laguna', coords:[121.06259475506205,14.345186709825553], mapsUrl:'https://www.google.com/maps/place/City+Fire+Auxillary+Unit+-+San+Pedro+City/@14.3449362,121.0600871,17z/data=!3m1!4b1!4m6!3m5!1s0x3397d74eae133b53:0x861fac383010d3dc!8m2!3d14.344931!4d121.062662!16s%2Fg%2F1tx1qr7f?entry=ttu' },
+{ id:20, type:'station', name:'Kalayaan Fire Station', contact:'(049) 523 3780', hours:'24/7', address:'1161 National Hwy, Kalayaan, Laguna', coords:[121.48135794128859,14.331320618679591], mapsUrl:'https://www.google.com/maps/place/Kalayaan+Fire+Station/@14.3340646,121.4786804,17z/data=!4m6!3m5!1s0x3397fbdff60f9a3d:0x238686961b64217c!8m2!3d14.3313012!4d121.4815124!16s%2Fg%2F11fqgj9sgb?entry=ttu' },
+{ id:21, type:'station', name:'Paete Municipal Fire Station', contact:'(049) 501 7315', hours:'24/7', address:'9F9J+XJR, J.P. Rizal St, Paete, Laguna', coords:[121.48152202110198,14.370016097945165], mapsUrl:'https://www.google.com/maps/place/Paete+Municipal+Fire+Station/@14.3699959,121.4789499,17z/data=!3m1!4b1!4m6!3m5!1s0x3397fb4a2291d8b7:0x8f6966935b8402!8m2!3d14.3699907!4d121.4815248!16s%2Fg%2F11gnrlf85x?entry=ttu' },
+{ id:22, type:'station', name:'Pangil Fire Station', contact:'09857705514', hours:'24/7', address:'CF28+XXG, Pangil, Laguna', coords:[121.46744740691022,14.402464685183402], mapsUrl:'https://www.google.com/maps/place/Pangil+Fire+Station/@14.4024427,121.4648782,17z/data=!3m1!4b1!4m6!3m5!1s0x3397f11d146d62f5:0xb86dc291605f55c6!8m2!3d14.4024375!4d121.4674531!16s%2Fg%2F11n6gm43jh?entry=ttu' },
+	{ id:23, type:'station', name:'Santa Maria Fire Station', contact:'(049) 501 8334', hours:'24/7', address:'FC9G+R5Q, Victorina, Poblacion, Santa Maria, Laguna', coords:[121.42543648317442,14.469685327578093], mapsUrl:'https://www.google.com/maps/place/Santa+Maria+Fire+Station/@14.4064558,121.400824,12.5z/data=!4m6!3m5!1s0x3397ed4aee854f7d:0x6da4c9bce70b263a!8m2!3d14.4695951!4d121.4254785!16s%2Fg%2F11fmpby_cx?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:24, type:'station', name:'Rizal Fire Station', contact:'(049) 809 0804', hours:'24/7', address:'Barangay, A Bonifacio, Rizal, Laguna', coords:[121.39405560757524,14.110962903255738], mapsUrl:'https://www.google.com/maps/place/Rizal+Fire+Station/@14.1108052,121.3940672,18z/data=!4m6!3m5!1s0x33bd598979af2125:0x3004bb74fd21c99c!8m2!3d14.1109412!4d121.3940529!16s%2Fg%2F1hc4wjpwr?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:25, type:'station', name:'San Francisco Emergency Response Unit (S.F.E.R.U.)', contact:'09384595551', hours:'24/7', address:'83M4+985, San Francisco Rd, Biñan, Laguna', coords:[121.05587111854415,14.333339318700022], mapsUrl:'https://www.google.com/maps/place/San+Francisco+Emergency+Response+Unit+(S.F.E.R.U.)/@14.3333843,121.0532796,17z/data=!3m1!4b1!4m6!3m5!1s0x3397d7a15c11fbc1:0xcfa902d04fc9ed5d!8m2!3d14.3333791!4d121.0558545!16s%2Fg%2F11gsbf8zbw?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:26, type:'station', name:'Bureau Of Fire Protection, Los Baños Fire Station', contact:'(049) 536 7965', hours:'24/7', address:'56GC+7RX, Jamboree Rd, Los Baños, Laguna', coords:[121.22209968085397,14.17581596255055], mapsUrl:'https://www.google.com/maps/place/Bureau+Of+Fire+Protection,+Los+Ba%C3%B1os+Fire+Station/@14.1757379,121.219535,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd60d978e6f773:0x3976be58d335e89!8m2!3d14.1757327!4d121.2221099!16s%2Fg%2F11h6f_cymt?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:27, type:'station', name:'Calauan Fire Station', contact:'(049) 503 5817', hours:'24/7', address:'58CV+4Q4, Nagcarlan - Rizal Rd, Calauan, Laguna', coords:[121.34443030166841,14.170313348091977], mapsUrl:'https://www.google.com/maps/place/Calauan+Fire+Station/@14.1702688,121.341864,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd5f46ea1220c3:0xa31c050d6916820!8m2!3d14.1702636!4d121.3444389!16s%2Fg%2F11j3w658q7?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:28, type:'station', name:'BFP R4A Santa Cruz Fire Station', contact:'(049) 808 2278', hours:'24/7', address:'7CC2+VH9, Provincial Road, Santa Cruz, Laguna', coords:[121.40151677637175,14.272234546989562], mapsUrl:'https://www.google.com/maps/place/BFP+Santa+Cruz+Fire+Station,+Bagumbayan/@14.2677311,121.396138,16z/data=!4m6!3m5!1s0x3397e300494d34b1:0x58238e90e366aa06!8m2!3d14.2721665!4d121.4014891!16s%2Fg%2F11vrh2dxn6?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:29, type:'station', name:'DILG BFP Biñan City Fire Station', contact:'511-9111', hours:'24/7', address:'83MP+Q8F, Malvar St, Biñan, Laguna', coords:[121.08605410315678,14.334497240384689], mapsUrl:'https://www.google.com/maps/place/DILG+BFP+Bi%C3%B1an+City+Fire+Station/@14.3333124,121.0856828,15.46z/data=!4m6!3m5!1s0x3397d90040b43259:0x98bc7dc9a7a2cccb!8m2!3d14.3343777!4d121.0860043!16s%2Fg%2F11vzv0s4_g?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+{ id:30, type:'station', name:'Laguna Technopark Fire Station', contact:'(049) 541 2696', hours:'24/7', address:'7365+G2W, S Science Ave, City of Santa Rosa, Laguna', coords:[121.05777037651946,14.26226801331374], mapsUrl:'https://www.google.com/maps/place/Laguna+Technopark+Fire+Station/@14.2613654,121.0550079,17z/data=!3m1!4b1!4m6!3m5!1s0x33bd7d5d9ebc2db7:0xf410c4023f284571!8m2!3d14.2613602!4d121.0575828!16s%2Fg%2F11cs5pcp9r?entry=ttu&g_ep=EgoyMDI1MTAwOC4wIKXMDSoASAFQAw%3D%3D' },
+        { id:31, type: 'hydrant', name: 'Hydrant - Sta Rosa Market', contact: 'N/A', hours: 'N/A', address: 'Sta. Rosa Public Market', coords: [121.1115, 14.3129] },
+        { id:32, type: 'hydrant', name: 'Hydrant - Calamba Crossing', contact: 'N/A', hours: 'N/A', address: 'Calamba Crossing', coords: [121.1645, 14.2110] },
+        { id:33, type: 'hydrant', name: 'Hydrant - Biñan Plaza', contact: 'N/A', hours: 'N/A', address: 'Biñan Town Plaza', coords: [121.0820, 14.3400] }
+      ];
+
+      const map = new Map({ basemap: 'streets-vector' });
+      const view = new MapView({ container: 'viewDiv', map: map, center: [121.1653, 14.2116], zoom: 10 });
+
+      view.ui.add(new Locate({ view }), 'top-left');
+      view.ui.add(new Zoom({ view }), 'bottom-left');
+      view.ui.add(new Home({ view }), 'top-left');
+
+      let userLocation = null;
+
+      const stationSymbol = { type: 'picture-marker', url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', width: '26px', height: '26px' };
+      const hydrantSymbol = { type: 'picture-marker', url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', width: '20px', height: '20px' };
+      const userSymbol = { type: 'simple-marker', style: 'circle', size: '12px', outline: { color: 'white', width: 1 }, color: [0,200,0,0.95] };
+
+      function makeTemplate(f) {
+        return {
+          title: f.name,
+          content: `
+            <div>
+              <p><strong>Address:</strong> ${f.address || 'N/A'}</p>
+              <p><strong>Contact:</strong> ${f.contact || 'N/A'}</p>
+              <p><strong>Hours:</strong> ${f.hours || 'N/A'}</p>
+              <p>
+                <a target="_blank" href="${directionLink(f)}"
+                   style="
+                    display:inline-block;
+       		    padding:8px 14px;
+       		    background:#ffffff;
+                    color:#000000;
+                    border-radius:6px;
+                    text-decoration:none;
+                    font-size:0.9rem;
+                    border:1px solid #ccc;
+                  ">
+                  Get Directions
+               </a>
+             </p>
+
+            </div>`
+        };
+      }
+
+      function drawGraphics() {
+        view.graphics.removeAll();
+        const filter = document.getElementById('filterType').value;
+        let items = features.filter(f => filter === 'all' || f.type === filter);
+
+        if (userLocation) {
+          const radiusKm = Number(radiusEl.value);
+          items = items
+            .map(it => ({ ...it, distanceKm: haversine(userLocation.lat, userLocation.lng, it.coords[1], it.coords[0]) }))
+            .filter(it => it.distanceKm <= radiusKm)
+            .sort((a, b) => a.distanceKm - b.distanceKm);
+
+          if (items.length === 1) {
+            items = [items[0]];
+          }
+        }
+
+        items.forEach(f => {
+          const symbol = f.type === 'station' ? stationSymbol : hydrantSymbol;
+          const g = new Graphic({
+            geometry: new Point({ longitude: f.coords[0], latitude: f.coords[1] }),
+            symbol,
+            attributes: f,
+            popupTemplate: makeTemplate(f)
+          });
+          view.graphics.add(g);
+        });
+
+        if (userLocation) {
+          const ug = new Graphic({
+            geometry: new Point({ longitude: userLocation.lng, latitude: userLocation.lat }),
+            symbol: userSymbol
+          });
+          ug.attributes = { __is_user: true };
+          view.graphics.add(ug);
+        }
+      }
+
+      const listEl = document.getElementById('list');
+      const searchEl = document.getElementById('search');
+      const radiusEl = document.getElementById('radius');
+
+      function renderList() {
+        listEl.innerHTML = '';
+        const q = searchEl.value.trim().toLowerCase();
+        const radiusKm = Number(radiusEl.value);
+        const filter = document.getElementById('filterType').value;
+
+        let items = features.filter(f => (filter === 'all' || f.type === filter) &&
+          (q === '' || (f.name + ' ' + (f.address || '')).toLowerCase().includes(q)));
+
+        if (userLocation) {
+          items = items
+            .map(it => ({ ...it, distanceKm: haversine(userLocation.lat, userLocation.lng, it.coords[1], it.coords[0]) }))
+            .filter(it => it.distanceKm <= radiusKm)
+            .sort((a,b) => a.distanceKm - b.distanceKm);
+
+          if (items.length === 1) {
+            items = [items[0]];
+          }
+        }
+
+        if (items.length === 0) {
+          listEl.innerHTML = '<p><em>No results.</em></p>';
+          return;
+        }
+
+        items.forEach(it => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = `
+            <h4>${it.name}</h4>
+            <small>${it.address}${it.distanceKm?` — ${it.distanceKm.toFixed(2)} km`:''}</small>
+            <p><strong>Contact:</strong> ${it.contact || 'N/A'}</p>
+            <p><strong>Hours:</strong> ${it.hours || 'N/A'}</p>
+          `;
+          const btns = document.createElement('div');
+          btns.style.display = 'flex'; btns.style.gap = '8px'; btns.style.marginTop = '8px';
+
+          const cBtn = document.createElement('button');
+          cBtn.className = 'btn-center';
+          cBtn.textContent = 'Center';
+          cBtn.onclick = () => centerOn(it);
+
+          const dBtn = document.createElement('button');
+          dBtn.className = 'btn-dir';
+          dBtn.textContent = 'Directions';
+          dBtn.onclick = () => window.open(directionLink(it), '_blank');
+
+          btns.appendChild(cBtn);
+          btns.appendChild(dBtn);
+          card.appendChild(btns);
+          listEl.appendChild(card);
+        });
+      }
+
+      function centerOn(item) {
+        view.goTo({ center: item.coords, zoom: 13 }).then(() => {
+          const g = view.graphics.items.find(gr => gr.attributes && gr.attributes.id === item.id);
+          if (g) view.popup.open({ location: g.geometry, features: [g] });
+        });
+      }
+
+     // ✅ Updated version of directionLink
+function directionLink(item) {
+  const dest = `${item.coords[1]},${item.coords[0]}`;
+
+  // If "Use My Location" has been used → show live directions
+  if (userLocation) {
+    const origin = `${userLocation.lat},${userLocation.lng}`;
+    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&travelmode=driving`;
+  }
+
+  // Otherwise, open the station’s specific Maps URL (exact location)
+  if (item.mapsUrl) {
+    return item.mapsUrl;
+  }
+
+  // Fallback (shouldn’t normally trigger)
+  return `https://www.google.com/maps/search/?api=1&query=${dest}`;
+}
+
+
+      function haversine(lat1, lon1, lat2, lon2) {
+        const toRad = x => x * Math.PI / 180;
+        const R = 6371;
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+      }
+
+      searchEl.addEventListener('input', renderList);
+      radiusEl.addEventListener('input', () => { renderList(); drawGraphics(); });
+      document.getElementById('filterType').addEventListener('change', () => { drawGraphics(); renderList(); });
+
+      document.getElementById('locateBtn').addEventListener('click', () => {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            view.graphics.items.filter(g => g.attributes && g.attributes.__is_user).forEach(g => view.graphics.remove(g));
+            const ug = new Graphic({ geometry: new Point({ longitude: userLocation.lng, latitude: userLocation.lat }), symbol: userSymbol });
+            ug.attributes = { __is_user: true };
+            view.graphics.add(ug);
+            view.goTo({ center: [userLocation.lng, userLocation.lat], zoom: 12 });
+            renderList();
+            drawGraphics();
+          }, err => alert('Unable to get location: ' + err.message));
+        } else {
+          alert('Geolocation not supported by your browser.');
+        }
+      });
+
+      document.getElementById('nearestBtn').addEventListener('click', () => {
+  if (!userLocation) {
+    alert('Click "Use My Location" first.');
+    return;
+  }
+
+  const stations = features
+    .filter(f => f.type === 'station')
+    .map(s => ({
+      ...s,
+      distanceKm: haversine(
+        userLocation.lat,
+        userLocation.lng,
+        s.coords[1],
+        s.coords[0]
+      ),
+    }));
+
+  if (stations.length === 0) {
+    alert('No stations available.');
+    return;
+  }
+
+  stations.sort((a, b) => a.distanceKm - b.distanceKm);
+  const nearest = stations[0];
+
+  // Center map and show popup
+  view.goTo({ center: nearest.coords, zoom: 13 }).then(() => {
+    const g = view.graphics.items.find(
+      (gr) => gr.attributes && gr.attributes.id === nearest.id
+    );
+
+    if (g) {
+      // ✅ Lock popup so it stays open
+      lockedFeature = g;
+
+      view.popup.open({
+        location: g.geometry,
+        features: [g],
+        updateLocationEnabled: false,
+      });
+    }
+  });
+});
+
+
+      // ✅ Hover + Click popup (holds details when clicked)
+let lastHovered = null;
+let lockedFeature = null;
+
+// Hover: show details temporarily
+view.on("pointer-move", (event) => {
+  // Skip hover if popup is locked open
+  if (lockedFeature) return;
+
+  view.hitTest(event, { include: view.graphics }).then((response) => {
+    const result = response.results.find(r =>
+      r.graphic && r.graphic.attributes && r.graphic.attributes.name
+    );
+
+    if (result && result.graphic !== lastHovered) {
+      lastHovered = result.graphic;
+      view.popup.open({
+        location: result.graphic.geometry,
+        features: [result.graphic],
+        updateLocationEnabled: false // prevent map movement
+      });
+    } else if (!result) {
+      view.popup.close();
+      lastHovered = null;
+    }
+  });
+});
+
+// Click: lock the popup so it stays open
+view.on("click", (event) => {
+  view.hitTest(event, { include: view.graphics }).then((response) => {
+    const result = response.results.find(r =>
+      r.graphic && r.graphic.attributes && r.graphic.attributes.name
+    );
+
+    if (result) {
+      lockedFeature = result.graphic;
+      view.popup.open({
+        location: result.graphic.geometry,
+        features: [result.graphic],
+        updateLocationEnabled: false
+      });
+    } else {
+      // click empty area → unlock
+      lockedFeature = null;
+      view.popup.close();
+    }
+  });
+});
+
+// When popup manually closed, unlock it
+view.popup.watch("visible", (isVisible) => {
+  if (!isVisible) {
+    lockedFeature = null;
+    lastHovered = null;
+  }
+});
+
+// Optional: press ESC to close locked popup
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    lockedFeature = null;
+    lastHovered = null;
+    view.popup.close();
+  }
+});
+
+
+
+      view.when(() => { drawGraphics(); renderList(); });
+
+    });
+  </script>
+</body>
+</html>
